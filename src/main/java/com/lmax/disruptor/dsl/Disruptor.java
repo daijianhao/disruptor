@@ -78,11 +78,12 @@ public class Disruptor<T>
     /**
      * Create a new Disruptor.
      *
-     * @param eventFactory   the factory to create events in the ring buffer.
-     * @param ringBufferSize the size of the ring buffer, must be power of 2.
-     * @param threadFactory  a {@link ThreadFactory} to create threads for processors.
-     * @param producerType   the claim strategy to use for the ring buffer.
-     * @param waitStrategy   the wait strategy to use for the ring buffer.
+     * @param eventFactory   Event工厂，the factory to create events in the ring buffer.
+     * @param ringBufferSize 环形缓冲区大小，the size of the ring buffer, must be power of 2.
+     * @param threadFactory  线程工厂，a {@link ThreadFactory} to create threads for processors.
+     * @param producerType   生产者类型，the claim strategy to use for the ring buffer.
+     * @param waitStrategy   表示当RingBuffer中没有可消费的Event时消费者的等待策略（默认是BlockingWaitStrategy）
+     *                       ，the wait strategy to use for the ring buffer.
      */
     public Disruptor(
             final EventFactory<T> eventFactory,
@@ -91,9 +92,9 @@ public class Disruptor<T>
             final ProducerType producerType,
             final WaitStrategy waitStrategy)
     {
-        this(
-            RingBuffer.create(producerType, eventFactory, ringBufferSize, waitStrategy),
-            threadFactory);
+        this(   //创建环形缓冲区
+                RingBuffer.create(producerType, eventFactory, ringBufferSize, waitStrategy),
+                threadFactory);
     }
 
     /**
@@ -114,6 +115,8 @@ public class Disruptor<T>
      * <pre><code>dw.handleEventsWith(A).then(B);</code></pre>
      *
      * <p>This call is additive, but generally should only be called once when setting up the Disruptor instance</p>
+     * <p>
+     * 设置event的处理器
      *
      * @param handlers the event handlers that will process events.
      * @return a {@link EventHandlerGroup} that can be used to chain dependencies.
@@ -184,6 +187,7 @@ public class Disruptor<T>
      * <p>Specify an exception handler to be used for any future event handlers.</p>
      *
      * <p>Note that only event handlers set up after calling this method will use the exception handler.</p>
+     * 异常处理器
      *
      * @param exceptionHandler the exception handler to use for any future {@link EventProcessor}.
      * @deprecated This method only applies to future event handlers. Use setDefaultExceptionHandler instead which applies to existing and new event handlers.
@@ -196,7 +200,7 @@ public class Disruptor<T>
 
     /**
      * <p>Specify an exception handler to be used for event handlers and worker pools created by this Disruptor.</p>
-     *
+     * 设置异常处理器
      * <p>The exception handler will be used by existing and future event handlers and worker pools created by this Disruptor instance.</p>
      *
      * @param exceptionHandler the exception handler to use.
@@ -273,7 +277,7 @@ public class Disruptor<T>
     /**
      * Publish an event to the ring buffer.
      *
-     * @param <A> Class of the user supplied argument.
+     * @param <A>             Class of the user supplied argument.
      * @param eventTranslator the translator that will load data into the event.
      * @param arg             A single argument to load into the event
      */
@@ -285,7 +289,7 @@ public class Disruptor<T>
     /**
      * Publish a batch of events to the ring buffer.
      *
-     * @param <A> Class of the user supplied argument.
+     * @param <A>             Class of the user supplied argument.
      * @param eventTranslator the translator that will load data into the event.
      * @param arg             An array single arguments to load into the events. One Per event.
      */
@@ -297,8 +301,8 @@ public class Disruptor<T>
     /**
      * Publish an event to the ring buffer.
      *
-     * @param <A> Class of the user supplied argument.
-     * @param <B> Class of the user supplied argument.
+     * @param <A>             Class of the user supplied argument.
+     * @param <B>             Class of the user supplied argument.
      * @param eventTranslator the translator that will load data into the event.
      * @param arg0            The first argument to load into the event
      * @param arg1            The second argument to load into the event
@@ -312,9 +316,9 @@ public class Disruptor<T>
      * Publish an event to the ring buffer.
      *
      * @param eventTranslator the translator that will load data into the event.
-     * @param <A> Class of the user supplied argument.
-     * @param <B> Class of the user supplied argument.
-     * @param <C> Class of the user supplied argument.
+     * @param <A>             Class of the user supplied argument.
+     * @param <B>             Class of the user supplied argument.
+     * @param <C>             Class of the user supplied argument.
      * @param arg0            The first argument to load into the event
      * @param arg1            The second argument to load into the event
      * @param arg2            The third argument to load into the event
@@ -337,6 +341,7 @@ public class Disruptor<T>
     public RingBuffer<T> start()
     {
         checkOnlyStartedOnce();
+        //遍历消费者集合，新建线程进行消费
         for (final ConsumerInfo consumerInfo : consumerRepository)
         {
             consumerInfo.start(threadFactory);
@@ -485,39 +490,66 @@ public class Disruptor<T>
      */
     public boolean hasStarted()
     {
-      return started.get();
+        return started.get();
     }
 
+    /**
+     *
+     * @param barrierSequences 依赖的消费进度,是给存在依赖关系的消费者用的
+     * @param eventHandlers
+     * @return
+     */
     EventHandlerGroup<T> createEventProcessors(
-        final Sequence[] barrierSequences,
-        final EventHandler<? super T>[] eventHandlers)
+            final Sequence[] barrierSequences,
+            final EventHandler<? super T>[] eventHandlers)
     {
         checkNotStarted();
 
+        // 用来保存每个消费者的消费进度
         final Sequence[] processorSequences = new Sequence[eventHandlers.length];
+        // SequenceBarrier主要是用来设置消费依赖的[详解1],新进消费者的进度
         final SequenceBarrier barrier = ringBuffer.newBarrier(barrierSequences);
 
         for (int i = 0, eventHandlersLength = eventHandlers.length; i < eventHandlersLength; i++)
         {
             final EventHandler<? super T> eventHandler = eventHandlers[i];
-
+            //可以看到每个eventHandler会被封装成BatchEventProcessor，看名字就知道是批量处理的了吧
             final BatchEventProcessor<T> batchEventProcessor =
-                new BatchEventProcessor<>(ringBuffer, barrier, eventHandler);
-
+                    new BatchEventProcessor<>(ringBuffer, barrier, eventHandler);
+            // 设置异常处理器
             if (exceptionHandler != null)
             {
                 batchEventProcessor.setExceptionHandler(exceptionHandler);
             }
-
+            // 注册到consumerRepository[详解2]
             consumerRepository.add(batchEventProcessor, eventHandler, barrier);
+            // 每一个BatchEventProcessor的消费进度
             processorSequences[i] = batchEventProcessor.getSequence();
         }
-
+        // 更新一些重要的东西[详解3]
         updateGatingSequencesForNextInChain(barrierSequences, processorSequences);
-
+        // 返回一个EventHandlerGroup，这个主要是为了DSL服务的，可以先不关心，可以看到DEMO中我们也没有用到这个返回值
         return new EventHandlerGroup<>(this, consumerRepository, processorSequences);
     }
 
+    /**
+     *
+     * 其次，还要弄明白一个问题：在向RingBuffer写入数据的时候，如何判定RingBuffer已满（这个应该在前面入门那几篇文章里要掌握的）？
+     * 通过看最慢的消费者的消费进度是不是已经被生产者拉了一圈了（类似1000米跑步的套圈）
+     *
+     *理解了上面两个问题之后，再来看代码总共做的三个事情：
+     *
+     * 1.把新进消费者的消费进度加入到【所有消费者的消费进度数组】中
+     * 2.如果说这个新进消费者是依赖了其他的消费者的，那么把其他的消费者从【所有消费者的消费进度数组】中移除。这里为什么要移除呢？
+     *      因为【所有消费者的消费进度数组】主要是用来获取最慢的进度的。那么被依赖的可以不用考虑，因为它不可能比依赖它的慢。
+     *      并且让这个数组足够小，可以提升计算最慢进度的性能。
+     * 3.把被依赖的消费者的endOfChain属性设置成false。
+     *  这个endOfChain是用来干嘛的呢？其实主要是Disruptor在shutdown的时候需要判定是否所有消费者都已经消费完了
+     *  （如果依赖了别人的消费者都消费完了，那么整条链路上一定都消费完了）。
+     *
+     * @param barrierSequences 依赖的消费进度
+     * @param processorSequences 新进消费者的进度
+     */
     private void updateGatingSequencesForNextInChain(final Sequence[] barrierSequences, final Sequence[] processorSequences)
     {
         if (processorSequences.length > 0)
@@ -532,7 +564,7 @@ public class Disruptor<T>
     }
 
     EventHandlerGroup<T> createEventProcessors(
-        final Sequence[] barrierSequences, final EventProcessorFactory<T>[] processorFactories)
+            final Sequence[] barrierSequences, final EventProcessorFactory<T>[] processorFactories)
     {
         final EventProcessor[] eventProcessors = new EventProcessor[processorFactories.length];
         for (int i = 0; i < processorFactories.length; i++)
@@ -563,9 +595,9 @@ public class Disruptor<T>
     public String toString()
     {
         return "Disruptor{" +
-            "ringBuffer=" + ringBuffer +
-            ", started=" + started +
-            ", threadFactory=" + threadFactory +
-            '}';
+                "ringBuffer=" + ringBuffer +
+                ", started=" + started +
+                ", threadFactory=" + threadFactory +
+                '}';
     }
 }

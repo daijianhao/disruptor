@@ -21,6 +21,9 @@ import static com.lmax.disruptor.RewindAction.REWIND;
 
 
 /**
+ *
+ * 批量事件处理器
+ *
  * Convenience class for handling the batching semantics of consuming entries from a {@link RingBuffer}
  * and delegating the available events to an {@link EventHandler}.
  *
@@ -41,6 +44,10 @@ public final class BatchEventProcessor<T>
     private final DataProvider<T> dataProvider;
     private final SequenceBarrier sequenceBarrier;
     private final EventHandler<? super T> eventHandler;
+
+    /**
+     * 记录当前 processor的 消费进度
+     */
     private final Sequence sequence = new Sequence(Sequencer.INITIAL_CURSOR_VALUE);
     private final TimeoutHandler timeoutHandler;
     private final BatchStartAware batchStartAware;
@@ -138,12 +145,13 @@ public final class BatchEventProcessor<T>
         if (witnessValue == IDLE) // Successful CAS
         {
             sequenceBarrier.clearAlert();
-
+            //回调
             notifyStart();
             try
             {
                 if (running.get() == RUNNING)
                 {
+                    //处理Event
                     processEvents();
                 }
             }
@@ -169,6 +177,7 @@ public final class BatchEventProcessor<T>
     private void processEvents()
     {
         T event = null;
+        // 成员变量sequence维护该Processor的消费进度
         long nextSequence = sequence.get() + 1L;
 
         while (true)
@@ -178,21 +187,24 @@ public final class BatchEventProcessor<T>
             {
                 try
                 {
-
+                    // 以nextSequence作为底线，去获取最大的可用sequence（也就是已经被publish的sequence）
                     final long availableSequence = sequenceBarrier.waitFor(nextSequence);
                     if (batchStartAware != null && availableSequence >= nextSequence)
                     {
                         batchStartAware.onBatchStart(availableSequence - nextSequence + 1);
                     }
-
+                    // 如果获取到的sequence大于等于nextSequence，说明有可以消费的event，
+                    // 从nextSequence(包含)到availableSequence(包含)这一段的事件就作为同一个批次
                     while (nextSequence <= availableSequence)
                     {
                         event = dataProvider.get(nextSequence);
+                        // 调用了前面注册的回调函数
                         eventHandler.onEvent(event, nextSequence, nextSequence == availableSequence);
                         nextSequence++;
                     }
 
                     retriesAttempted = 0;
+                    // 消费完一批之后 一次性更新消费进度
                     sequence.set(availableSequence);
                 }
                 catch (final RewindableException e)
@@ -210,6 +222,7 @@ public final class BatchEventProcessor<T>
             }
             catch (final TimeoutException e)
             {
+                // waitFor超时的场景
                 notifyTimeout(sequence.get());
             }
             catch (final AlertException ex)
@@ -222,6 +235,8 @@ public final class BatchEventProcessor<T>
 
             catch (final Throwable ex)
             {
+                // 消费过程中如果抛出异常，表面上看会更新消费进度，也就是说没有补偿机制。
+                // 但实际上默认的策略是会抛异常的，消费线程会直接结束掉
                 handleEventException(ex, nextSequence, event);
                 sequence.set(nextSequence);
                 nextSequence++;

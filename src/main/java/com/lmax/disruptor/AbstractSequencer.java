@@ -31,7 +31,19 @@ public abstract class AbstractSequencer implements Sequencer
         AtomicReferenceFieldUpdater.newUpdater(AbstractSequencer.class, Sequence[].class, "gatingSequences");
 
     protected final int bufferSize;
+    /**
+     * 这个等待策略在生产者与消费者中 共享 俩实现多个线程的生产协调
+     */
     protected final WaitStrategy waitStrategy;
+
+    /**
+     * 这个cursor是什么呢？首先它是Sequencer的成员变量。
+     * 而Sequencer有两种：SingleProducerSequencer和MultiProducerSequencer。
+     * 对于SingleProducerSequencer来说，cursor表示的是RingBuffer上当前已发布的最大sequence，
+     * 而对于MultiProducerSequencer来说，cursor表示的是RingBuffer上当前已申请的最大sequence。
+     * 此处先有个概念即可，下面讲完生产逻辑之后会详细描述
+     *
+     */
     protected final Sequence cursor = new Sequence(Sequencer.INITIAL_CURSOR_VALUE);
     protected volatile Sequence[] gatingSequences = new Sequence[0];
 

@@ -23,6 +23,15 @@ package com.lmax.disruptor;
 final class ProcessingSequenceBarrier implements SequenceBarrier
 {
     private final WaitStrategy waitStrategy;
+    /**
+     * SequenceBarrier主要是设置消费依赖的。
+     * 比如某个消费者必须等它依赖的消费者消费完某个消息之后才可以消费该消息。
+     * 当然此处是从Disruptor上直接创建消费组，sequencesToTrack都为空数组，
+     * 所以只依赖于RingBuffer上的cursorSequence（也就是只要RingBuffer上写(publish)到哪了，
+     * 那么我就能消费到哪）
+     *
+     * dependentSequence 用来记录当前消费者所依赖的其他消费者的Sequence，所以叫dependent
+     */
     private final Sequence dependentSequence;
     private volatile boolean alerted = false;
     private final Sequence cursorSequence;
@@ -39,10 +48,17 @@ final class ProcessingSequenceBarrier implements SequenceBarrier
         this.cursorSequence = cursorSequence;
         if (0 == dependentSequences.length)
         {
+            /*
+             0 == dependentSequences.length ，说明当前消费者不依赖其他消费者，
+             而是直接从ringBuffer消费，即为 cursorSequence
+             */
             dependentSequence = cursorSequence;
         }
         else
         {
+            /*
+             * 当存在依赖的其他消费者时，就将多个消费者 包装为一个，获取序号时取最小的
+             */
             dependentSequence = new FixedSequenceGroup(dependentSequences);
         }
     }
@@ -52,14 +68,14 @@ final class ProcessingSequenceBarrier implements SequenceBarrier
         throws AlertException, InterruptedException, TimeoutException
     {
         checkAlert();
-
+        // waitStrategy派上用场了，这是我们在构造Disruptor的时候的入参（也是构造RingBuffer的入参）
         long availableSequence = waitStrategy.waitFor(sequence, cursorSequence, dependentSequence, this);
-
+        // 理论上没有可能为true，因为当前每种waitStrategy内都保证了availableSequence一定大于等于sequence
         if (availableSequence < sequence)
         {
             return availableSequence;
         }
-
+        // 返回最大的已发布的sequence，在单生产者模式下这个函数返回值就等于availableSequence
         return sequencer.getHighestPublishedSequence(sequence, availableSequence);
     }
 

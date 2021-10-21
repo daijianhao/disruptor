@@ -4,6 +4,9 @@ package com.lmax.disruptor;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 
+/**
+ * 左边padding
+ */
 class LhsPadding
 {
     protected byte
@@ -21,6 +24,9 @@ class Value extends LhsPadding
     protected long value;
 }
 
+/**
+ * 右侧padding
+ */
 class RhsPadding extends Value
 {
     protected byte

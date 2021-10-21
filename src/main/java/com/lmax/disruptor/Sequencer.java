@@ -17,6 +17,8 @@ package com.lmax.disruptor;
 
 /**
  * Coordinates claiming sequences for access to a data structure while tracking dependent {@link Sequence}s
+ *
+ * 对某环形缓冲区中一个位置的抽象，可以发布这个位置是否ready, 判断位置时候可用等
  */
 public interface Sequencer extends Cursored, Sequenced
 {

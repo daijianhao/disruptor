@@ -37,6 +37,10 @@ abstract class RingBufferFields<E> extends RingBufferPad
     private final long indexMask;
     private final E[] entries;
     protected final int bufferSize;
+    /**
+     * 可以理解成RingBuffer的"帮手"，RingBuffer委托Sequencer来处理一些非存储类的工作
+     * （比如申请sequence，维护sequence进度，发布事件等）
+     */
     protected final Sequencer sequencer;
 
     @SuppressWarnings("unchecked")
@@ -56,8 +60,11 @@ abstract class RingBufferFields<E> extends RingBufferPad
             throw new IllegalArgumentException("bufferSize must be a power of 2");
         }
 
+        // indexMask主要是为了使用位运算取模的，很多源码里都能看到这类优化
         this.indexMask = bufferSize - 1;
+        //创建buffer数组，增加了padding
         this.entries = (E[]) new Object[sequencer.getBufferSize() + 2 * BUFFER_PAD];
+        //填充ValueHolder
         fill(eventFactory);
     }
 
@@ -85,6 +92,8 @@ public final class RingBuffer<E> extends RingBufferFields<E> implements Cursored
 {
     /**
      * The initial cursor value
+     *
+     * 初始化时 游标的值 -1L
      */
     public static final long INITIAL_CURSOR_VALUE = Sequence.INITIAL_VALUE;
     protected byte
@@ -184,7 +193,7 @@ public final class RingBuffer<E> extends RingBufferFields<E> implements Cursored
 
     /**
      * Create a new Ring Buffer with the specified producer type (SINGLE or MULTI)
-     *
+     * 创建一个环形缓冲区
      * @param <E> Class of the event stored in the ring buffer.
      * @param producerType producer type to use {@link ProducerType}.
      * @param factory      used to create events within the ring buffer.
@@ -202,8 +211,10 @@ public final class RingBuffer<E> extends RingBufferFields<E> implements Cursored
         switch (producerType)
         {
             case SINGLE:
+                //创建单生产者的
                 return createSingleProducer(factory, bufferSize, waitStrategy);
             case MULTI:
+                //创建多生产者的
                 return createMultiProducer(factory, bufferSize, waitStrategy);
             default:
                 throw new IllegalStateException(producerType.toString());
@@ -228,6 +239,7 @@ public final class RingBuffer<E> extends RingBufferFields<E> implements Cursored
     @Override
     public E get(final long sequence)
     {
+        //获取在 sequence 上的 ValueHolder
         return elementAt(sequence);
     }
 
@@ -472,6 +484,13 @@ public final class RingBuffer<E> extends RingBufferFields<E> implements Cursored
     }
 
     /**
+     *
+     * 从上面的代码结构可以看出来，发布事件总共分为三个步骤：
+     *
+     * 申请sequence
+     * 填充事件内容
+     * 提交发布
+     *
      * @see com.lmax.disruptor.EventSink#tryPublishEvent(com.lmax.disruptor.EventTranslator)
      */
     @Override
@@ -556,6 +575,7 @@ public final class RingBuffer<E> extends RingBufferFields<E> implements Cursored
     @Override
     public <A, B, C> void publishEvent(final EventTranslatorThreeArg<E, A, B, C> translator, final A arg0, final B arg1, final C arg2)
     {
+        //申请一个可写入的位置
         final long sequence = sequencer.next();
         translateAndPublish(translator, sequence, arg0, arg1, arg2);
     }
@@ -1002,10 +1022,12 @@ public final class RingBuffer<E> extends RingBufferFields<E> implements Cursored
     {
         try
         {
+            //获取当前可写入位置的ValHolder，然后设置值 ，再发布ready
             translator.translateTo(get(sequence), sequence, arg0, arg1, arg2);
         }
         finally
         {
+            //发布sequence的位置已经ready,然后可以让consumer消费了
             sequencer.publish(sequence);
         }
     }

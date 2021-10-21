@@ -248,6 +248,17 @@ public final class MultiProducerSequencer extends AbstractSequencer
         return (int) AVAILABLE_ARRAY.getAcquire(availableBuffer, index) == flag;
     }
 
+    /**
+     * 从WaitStrategy.waitFor()返回后，得到的是RingBuffer上已申请进度sequence或者是依赖消费者消费进度sequence（当然如果把cursorSequence也看成一种依赖的话，理解起来就统一了）。注意一个形容词——“已申请”，而不是“已发布”，“已申请”意味着还不一定“已发布”，也就是还不能消费。所以，SequenceBarrier.waitFor最后还有一步
+     *
+     * 当然如果你很仔细的看到这里并且对于前面的内容都理解了，你可能会产生疑问：对于单生产者来说，本来就是在publish的时候才更新cursor的啊？
+     * 那上一步从WaitStrategy.waitFor()获取到的不就是“已发布”的进度sequence吗？是的，你说得很正确。对于单生产者确实如此
+     *
+     * 对于多生产者，getHighestPublishedSequence()返回 从 lowerBound 到 第一个连续已申请的最大 位置
+     * @param lowerBound
+     * @param availableSequence The sequence to scan to.
+     * @return
+     */
     @Override
     public long getHighestPublishedSequence(final long lowerBound, final long availableSequence)
     {

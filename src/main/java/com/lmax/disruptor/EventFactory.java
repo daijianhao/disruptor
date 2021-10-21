@@ -17,7 +17,7 @@ package com.lmax.disruptor;
 
 /**
  * Called by the {@link RingBuffer} to pre-populate all the events to fill the RingBuffer.
- *
+ *  Event工厂，Event 相当于一个ValueHolder,会预先创建出来承载数据用
  * @param <T> event implementation storing the data for sharing during exchange or parallel coordination of an event.
  */
 public interface EventFactory<T>

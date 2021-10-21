@@ -31,7 +31,7 @@ public interface Sequenced
 
     /**
      * Claim the next event in sequence for publishing.
-     *
+     * 获取下一个可写入的位置
      * @return the claimed sequence value
      */
     long next();

@@ -30,7 +30,7 @@ import java.util.Map;
 
 /**
  * Provides a repository mechanism to associate {@link EventHandler}s with {@link EventProcessor}s
- *
+ *无论从类名还是方法体，都可以看出，这个对象主要是用来存储消费者信息的，有两个维度的Map
  * @param <T> the type of the {@link EventHandler}
  */
 class ConsumerRepository<T> implements Iterable<ConsumerInfo>
